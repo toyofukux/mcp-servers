@@ -12,12 +12,7 @@ jobs:
       - name: Check required global secrets
         id: check-global-secrets
         env:
-          GCP_CREDEN          # Set service name
-          SERVICE_NAME="mcp-github"
-          echo "Service name: $SERVICE_NAME"
-
-          # Deploy to Cloud Run
-          echo "Deploying to Cloud Run..." ${{ secrets.GCP_CREDENTIALS }}
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
           GCP_REGION: ${{ secrets.GCP_REGION }}
         run: |
           missing_secrets=""
