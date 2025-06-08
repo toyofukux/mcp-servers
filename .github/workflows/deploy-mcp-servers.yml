@@ -122,25 +122,25 @@ jobs:
             exit 1
           fi
 
-      - name: Push GitHub MCP Server image to Artifact Registry
-        id: push-github-image
-        env:
-          VERSION: ${{ steps.github-version.outputs.version }}
-          GCP_REGION: ${{ secrets.GCP_REGION }}
-        run: |
-          echo "Preparing GitHub MCP server image"
-          IMAGE=$(cat mcps/github/docker-image.txt)
-          SOURCE_IMAGE="${IMAGE}:${VERSION}"
-          PROJECT_ID=$(gcloud config get-value project)
-          ARTIFACT_IMAGE="$GCP_REGION-docker.pkg.dev/$PROJECT_ID/github-mcp-server/github-mcp-server:$VERSION"
-          echo "Source image: $SOURCE_IMAGE"
-          echo "Target Artifact Registry image: $ARTIFACT_IMAGE"
+      #   - name: Push GitHub MCP Server image to Artifact Registry
+      #     id: push-github-image
+      #     env:
+      #       VERSION: ${{ steps.github-version.outputs.version }}
+      #       GCP_REGION: ${{ secrets.GCP_REGION }}
+      #     run: |
+      #       echo "Preparing GitHub MCP server image"
+      #       IMAGE=$(cat mcps/github/docker-image.txt)
+      #       SOURCE_IMAGE="${IMAGE}:${VERSION}"
+      #       PROJECT_ID=$(gcloud config get-value project)
+      #       ARTIFACT_IMAGE="$GCP_REGION-docker.pkg.dev/$PROJECT_ID/github-mcp-server/github-mcp-server:$VERSION"
+      #       echo "Source image: $SOURCE_IMAGE"
+      #       echo "Target Artifact Registry image: $ARTIFACT_IMAGE"
 
-          docker pull $SOURCE_IMAGE
-          docker tag $SOURCE_IMAGE $ARTIFACT_IMAGE
-          docker push $ARTIFACT_IMAGE
+      #       docker pull $SOURCE_IMAGE
+      #       docker tag $SOURCE_IMAGE $ARTIFACT_IMAGE
+      #       docker push $ARTIFACT_IMAGE
 
-          echo "artifact_image=$ARTIFACT_IMAGE" >> $GITHUB_OUTPUT
+      #       echo "artifact_image=$ARTIFACT_IMAGE" >> $GITHUB_OUTPUT
 
       #   - name: Deploy GitHub MCP Server
       #     env:
@@ -196,7 +196,8 @@ jobs:
           DEPLOY_IMAGE="${{ steps.push-notion-image.outputs.artifact_image }}"
           SERVICE_NAME="mcp-notion"
 
-          NOTION_HEADERS='{"Authorization":"Bearer $NOTION_API_TOKEN","Notion-Version":"2022-06-28"}'
+          NOTION_HEADERS='{"Authorization":"Bearer '"$NOTION_API_TOKEN"'","Notion-Version":"2022-06-28"}'
+          ESCAPED_HEADERS=$(echo "$NOTION_HEADERS" | sed -e 's/,/\\,/g' -e 's/=/\\=/g')
 
           gcloud run deploy $SERVICE_NAME \
             --image $DEPLOY_IMAGE \
@@ -209,6 +210,6 @@ jobs:
             --port 8080 \
             --timeout 3600 \
             --no-allow-unauthenticated \
-            --set-env-vars="OPENAPI_MCP_HEADERS=$NOTION_HEADERS"
+            --set-env-vars="OPENAPI_MCP_HEADERS=$ESCAPED_HEADERS"
 
 # ※必要に応じて新サーバー追加時は同様に追記
