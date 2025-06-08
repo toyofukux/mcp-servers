@@ -8,7 +8,37 @@ on:
       - main
 
 jobs:
+  validate-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required global secrets
+        id: check-global-secrets
+        run: |
+          missing_secrets=""
+
+          if [[ -z "${{ secrets.GCP_PROJECT_ID }}" ]]; then
+            missing_secrets="${missing_secrets} GCP_PROJECT_ID"
+          fi
+
+          if [[ -z "${{ secrets.GCP_SA_KEY }}" ]]; then
+            missing_secrets="${missing_secrets} GCP_SA_KEY"
+          fi
+
+          if [[ -z "${{ secrets.GCP_REGION }}" ]]; then
+            missing_secrets="${missing_secrets} GCP_REGION"
+          fi
+
+          if [[ ! -z "$missing_secrets" ]]; then
+            echo "::error::Missing required global secrets:${missing_secrets}"
+            echo "::error::Please set up the required secrets in your GitHub repository settings."
+            echo "::error::See docs/github-secrets-setup.md for detailed instructions."
+            exit 1
+          else
+            echo "All required global secrets are available"
+          fi
+
   deploy:
+    needs: validate-secrets
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -22,35 +52,67 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           service_account_key: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Detect changed MCP servers
-        id: detect-changes
+      - name: Check if GitHub MCP server changed
+        id: check-github
         run: |
-          echo "Checking for changes in version.txt files..."
-          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD | grep "mcps/.*/version.txt" || echo "")
-          if [ -n "$CHANGED_FILES" ]; then
-            echo "Found changed files: $CHANGED_FILES"
-            CHANGED_DIRS=$(echo "$CHANGED_FILES" | sed -r 's|mcps/([^/]+)/version.txt|\1|')
-            echo "Changed directories: $CHANGED_DIRS"
-            echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
+          if git diff --name-only HEAD^ HEAD | grep -q "mcps/github/version.txt"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "version=$(cat mcps/github/version.txt)" >> $GITHUB_OUTPUT
+            
+            # Check required secrets for GitHub MCP server
+            if [[ -z "${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}" ]]; then
+              echo "::error::Missing required secret for GitHub MCP server: GH_PERSONAL_ACCESS_TOKEN"
+              echo "::error::Please set up this secret in your GitHub repository settings."
+              echo "::error::See docs/github-secrets-setup.md for detailed instructions."
+              echo "changed=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
           else
-            echo "No version.txt files were changed in this commit."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check if Notion MCP server changed
+        id: check-notion
+        run: |
+          if git diff --name-only HEAD^ HEAD | grep -q "mcps/notion/version.txt"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "version=$(cat mcps/notion/version.txt)" >> $GITHUB_OUTPUT
+            
+            # Check required secrets for Notion MCP server
+            if [[ -z "${{ secrets.NOTION_API_TOKEN }}" ]]; then
+              echo "::error::Missing required secret for Notion MCP server: NOTION_API_TOKEN"
+              echo "::error::Please set up this secret in your GitHub repository settings."
+              echo "::error::See docs/github-secrets-setup.md for detailed instructions."
+              echo "changed=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Deploy GitHub MCP Server
-        if: contains(steps.detect-changes.outputs.dirs, 'github')
+        if: steps.check-github.outputs.changed == 'true'
         run: |
-          VERSION=$(cat mcps/github/version.txt)
           echo "-------------------------------------"
           echo "Deploying GitHub MCP server"
-          echo "Version: $VERSION"
+          echo "Version: ${{ steps.check-github.outputs.version }}"
 
+          # Double-check required secrets before deployment
+          if [[ -z "${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}" ]]; then
+            echo "❌ Deployment failed: Missing required secret GH_PERSONAL_ACCESS_TOKEN"
+            exit 1
+          fi
+
+          # イメージ情報を取得
           IMAGE=$(cat mcps/github/docker-image.txt)
-          DEPLOY_IMAGE="${IMAGE}:${VERSION}"
+          DEPLOY_IMAGE="${IMAGE}:${{ steps.check-github.outputs.version }}"
           echo "Using public image: $DEPLOY_IMAGE"
 
+          # サービス名設定
           SERVICE_NAME="mcp-github"
           echo "Service name: $SERVICE_NAME"
 
+          # Cloud Runにデプロイ
           echo "Deploying to Cloud Run..."
           gcloud run deploy $SERVICE_NAME \
             --image $DEPLOY_IMAGE \
@@ -76,22 +138,30 @@ jobs:
           echo "-------------------------------------"
 
       - name: Deploy Notion MCP Server
-        if: contains(steps.detect-changes.outputs.dirs, 'notion')
+        if: steps.check-notion.outputs.changed == 'true'
         run: |
-          VERSION=$(cat mcps/notion/version.txt)
           echo "-------------------------------------"
           echo "Deploying Notion MCP server"
-          echo "Version: $VERSION"
+          echo "Version: ${{ steps.check-notion.outputs.version }}"
 
+          # Double-check required secrets before deployment
+          if [[ -z "${{ secrets.NOTION_API_TOKEN }}" ]]; then
+            echo "❌ Deployment failed: Missing required secret NOTION_API_TOKEN"
+            exit 1
+          fi
+
+          # イメージ情報を取得
           IMAGE=$(cat mcps/notion/docker-image.txt)
-          DEPLOY_IMAGE="${IMAGE}:${VERSION}"
+          DEPLOY_IMAGE="${IMAGE}:${{ steps.check-notion.outputs.version }}"
           echo "Using public image: $DEPLOY_IMAGE"
 
+          # サービス名設定
           SERVICE_NAME="mcp-notion"
           echo "Service name: $SERVICE_NAME"
 
+          # Cloud Runにデプロイ
           echo "Deploying to Cloud Run..."
-          # Create JSON format header with Notion token and version
+          # NotionヘッダーJSONフォーマット
           NOTION_HEADERS="{\"Authorization\":\"Bearer ${{ secrets.NOTION_API_TOKEN }}\",\"Notion-Version\":\"2022-06-28\"}"
 
           gcloud run deploy $SERVICE_NAME \
@@ -116,94 +186,40 @@ jobs:
             exit 1
           fi
           echo "-------------------------------------"
-          echo "Deploying Notion MCP server"
-          echo "Version: $VERSION"
 
-          IMAGE=$(cat mcps/notion/docker-image.txt)
-          DEPLOY_IMAGE="${IMAGE}:${VERSION}"
-          echo "Using public image: $DEPLOY_IMAGE"
-
-          SERVICE_NAME="mcp-notion"
-          echo "Service name: $SERVICE_NAME"
-
-          echo "Deploying to Cloud Run..."
-          # Create JSON format header with Notion token and version
-          NOTION_HEADERS="{\"Authorization\":\"Bearer \${{ secrets.NOTION_API_TOKEN }}\",\"Notion-Version\":\"2022-06-28\"}"
-
-          gcloud run deploy $SERVICE_NAME \
-            --image $DEPLOY_IMAGE \
-            --platform managed \
-            --region ${{ secrets.GCP_REGION }} \
-            --memory 512Mi \
-            --min-instances 0 \
-            --max-instances 1 \
-            --cpu 1 \
-            --port 8080 \
-            --timeout 3600 \
-            --allow-unauthenticated=false \
-            --set-env-vars="OPENAPI_MCP_HEADERS=$NOTION_HEADERS"
-
-          if [ $? -eq 0 ]; then
-            echo "✅ Successfully deployed $SERVICE_NAME"
-            SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region ${{ secrets.GCP_REGION }} --format="value(status.url)")
-            echo "Service URL: $SERVICE_URL"
-          else
-            echo "❌ Failed to deploy $SERVICE_NAME"
-            exit 1
-          fi
+      # デプロイの結果を通知
+      - name: Send deployment summary
+        if: always()
+        run: |
+          echo "-------------------------------------"
+          echo "📊 Deployment Summary"
           echo "-------------------------------------"
 
-      - name: Deploy other MCP Servers
-        if: steps.detect-changes.outputs.dirs != '' && !contains(steps.detect-changes.outputs.dirs, 'github') && !contains(steps.detect-changes.outputs.dirs, 'notion')
-        run: |
-          for DIR in ${{ steps.detect-changes.outputs.dirs }}; do
-            # Skip github and notion servers as they are handled separately
-            if [ "$DIR" = "github" ] || [ "$DIR" = "notion" ]; then
-              continue
-            fi
-            
-            VERSION=$(cat mcps/$DIR/version.txt)
-            echo "-------------------------------------"
-            echo "Deploying MCP server: $DIR"
-            echo "Version: $VERSION"
-            
-            # 公開レジストリのイメージを使用する
-            if [ -f "mcps/$DIR/docker-image.txt" ]; then
-              IMAGE=$(cat mcps/$DIR/docker-image.txt)
-              DEPLOY_IMAGE="${IMAGE}:${VERSION}"
-              echo "Using public image: $DEPLOY_IMAGE"
+          # GitHub MCP Server
+          if [[ "${{ steps.check-github.outputs.changed }}" == "true" ]]; then
+            if [[ "${{ steps.check-github.outcome }}" == "success" ]]; then
+              echo "✅ GitHub MCP Server: Successfully deployed version ${{ steps.check-github.outputs.version }}"
             else
-              echo "Error: $DIR does not have docker-image.txt file"
-              echo "Make sure to create a docker-image.txt file with the public registry image path"
-              exit 1
+              echo "❌ GitHub MCP Server: Deployment failed"
             fi
-            
-            # サービス名を設定（"mcp-" プレフィックスを追加）
-            SERVICE_NAME="mcp-${DIR}"
-            echo "Service name: $SERVICE_NAME"
-            
-            # Cloud Run にデプロイ (認証付き)
-            echo "Deploying to Cloud Run..."
-            gcloud run deploy $SERVICE_NAME \
-              --image $DEPLOY_IMAGE \
-              --platform managed \
-              --region ${{ secrets.GCP_REGION }} \
-              --memory 512Mi \
-              --min-instances 0 \
-              --max-instances 1 \
-              --cpu 1 \
-              --port 8080 \
-              --timeout 3600 \
-              --allow-unauthenticated=false
-            
-            if [ $? -eq 0 ]; then
-              echo "✅ Successfully deployed $SERVICE_NAME"
-              # デプロイされたサービスのURLを取得
-              SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region ${{ secrets.GCP_REGION }} --format="value(status.url)")
-              echo "Service URL: $SERVICE_NAME"
+          else
+            echo "⏭️ GitHub MCP Server: No changes, skipped deployment"
+          fi
+
+          # Notion MCP Server
+          if [[ "${{ steps.check-notion.outputs.changed }}" == "true" ]]; then
+            if [[ "${{ steps.check-notion.outcome }}" == "success" ]]; then
+              echo "✅ Notion MCP Server: Successfully deployed version ${{ steps.check-notion.outputs.version }}"
             else
-              echo "❌ Failed to deploy $SERVICE_NAME"
-              exit 1
+              echo "❌ Notion MCP Server: Deployment failed"
             fi
-            echo "-------------------------------------"
-          done
+          else
+            echo "⏭️ Notion MCP Server: No changes, skipped deployment"
+          fi
+
+          echo "-------------------------------------"
+          echo "For more details, see the deployment logs"
+          echo "-------------------------------------"
+
+      # 注：新しいMCPサーバーを追加する場合は、上記と同様の形式でステップを追加してください
+      # 各MCPサーバーは必要な環境変数やシークレットが異なるため、個別に設定が必要です

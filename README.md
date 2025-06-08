@@ -2,13 +2,24 @@
 
 ## MCP とは
 
-MCP（Model Context Protocol）は、システム間 - `GCP_PROJECT_ID` - Google Cloud プロジェクト ID
+MCP（Model Context Protocol）は、システム間のリソースをプログラム的に利用可能にするための通信プロトコルです。  
+MCP サーバーは、このプロトコルに準拠したツールやリソースを提供し、クライアントからのリクエストに応答します。
 
+## 必須の GitHub Secrets
+
+デプロイに必要な GitHub Secrets を以下に示します。これらすべてのシークレットは、リポジトリの設定で事前に設定する必要があります。
+ワークフローには、デプロイ前に必須シークレットの存在を確認する機能が組み込まれており、不足しているシークレットがある場合はデプロイが停止されます。
+
+### グローバルに必要なシークレット（すべての MCP サーバー共通）
+
+- `GCP_PROJECT_ID` - Google Cloud プロジェクト ID
 - `GCP_REGION` - デプロイ先リージョン（例: `us-central1`）
 - `GCP_SA_KEY` - サービスアカウントの JSON キー（全体をコピー）
+
+### 個別の MCP サーバーに必要なシークレット
+
 - `GH_PERSONAL_ACCESS_TOKEN` - GitHub MCP サーバー用のトークン
-- `NOTION_API_TOKEN` - Notion MCP サーバー用の API トークン（OPENAPI_MCP_HEADERS で使用）リソースをプログラム的に利用可能にするための通信プロトコルです。  
-  MCP サーバーは、このプロトコルに準拠したツールやリソースを提供し、クライアントからのリクエストに応答します。
+- `NOTION_API_TOKEN` - Notion MCP サーバー用の API トークン（OPENAPI_MCP_HEADERS で使用）
 
 ## Google Cloud Run でのホスティング
 
@@ -48,6 +59,7 @@ Google Cloud Run 上でこれらの Docker コンテナをデプロイするこ�
 - `/docs/`  
   MCP サーバー一覧や運用に関するドキュメントを管理します。
   - `github-mcp-server.md` - GitHub MCP サーバーのドキュメント
+  - `github-secrets-setup.md` - GitHub Secrets の設定手順
 
 ## 本リポジトリで対応している MCP サーバー一覧
 
@@ -112,9 +124,8 @@ git push origin main
 
 ### ローカルコンテナ起動時の環境変数管理
 
-- Makefile の `make up` コマンドは、各 MCP サーバーの Docker イメージをプルし、コンテナを起動します。
+- ローカルでの開発時は、Docker コマンドを直接使用して各 MCP サーバーのコンテナを起動します。
 - 環境変数は親リポジトリの `env/` ディレクトリに `.env.<server_name>` 形式で配置してください。
-- `.env.<server_name>` ファイルに記載された環境変数は、`make up` 実行時に自動的にコンテナに渡されます。
 - 例: `env/.env.github`
 
 ```
@@ -122,7 +133,42 @@ GITHUB_PERSONAL_ACCESS_TOKEN=your_token_here
 OTHER_ENV_VAR=value
 ```
 
-- これにより、環境変数の管理がサーバー単位で分離され、Makefile は汎用的に対応可能です。
+- GitHub MCP サーバーを起動する場合:
+
+```bash
+# 環境変数ファイルから変数を読み込む
+IMAGE=$(cat mcps/github/docker-image.txt)
+VERSION=$(cat mcps/github/version.txt)
+FULL_IMAGE="${IMAGE}:${VERSION}"
+
+# Docker コンテナを起動
+docker pull $FULL_IMAGE
+docker run -d --name mcp-github-container -p 8080:8080 --env-file env/.env.github $FULL_IMAGE
+```
+
+- Notion MCP サーバーを起動する場合:
+
+```bash
+# 環境変数ファイルから変数を読み込む
+IMAGE=$(cat mcps/notion/docker-image.txt)
+VERSION=$(cat mcps/notion/version.txt)
+FULL_IMAGE="${IMAGE}:${VERSION}"
+
+# Docker コンテナを起動
+docker pull $FULL_IMAGE
+docker run -d --name mcp-notion-container -p 8081:8080 --env-file env/.env.notion $FULL_IMAGE
+```
+
+- コンテナを停止する場合:
+
+```bash
+docker stop mcp-github-container
+docker rm mcp-github-container
+
+docker stop mcp-notion-container
+docker rm mcp-notion-container
+```
+
 - 環境変数の追加や変更があった場合は、対応する `.env` ファイルを編集してください。
 - 必須の環境変数（例: `GITHUB_PERSONAL_ACCESS_TOKEN`）は必ず設定してください。
 - `.env` ファイルは Git 管理から除外することを推奨します（`.gitignore`に追加）。
