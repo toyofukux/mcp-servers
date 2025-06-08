@@ -196,6 +196,8 @@ jobs:
           DEPLOY_IMAGE="${{ steps.push-notion-image.outputs.artifact_image }}"
           SERVICE_NAME="mcp-notion"
 
+          NOTION_HEADERS='{"Authorization":"Bearer $NOTION_API_TOKEN","Notion-Version":"2022-06-28"}'
+
           gcloud run deploy $SERVICE_NAME \
             --image $DEPLOY_IMAGE \
             --platform managed \
@@ -207,6 +209,6 @@ jobs:
             --port 8080 \
             --timeout 3600 \
             --no-allow-unauthenticated \
-            --set-env-vars="OPENAPI_MCP_HEADERS=$'{{\"Authorization\":\"Bearer $NOTION_API_TOKEN\",\"Notion-Version\":\"2022-06-28\"}}'"
+            --set-env-vars="OPENAPI_MCP_HEADERS=$NOTION_HEADERS"
 
 # ※必要に応じて新サーバー追加時は同様に追記
