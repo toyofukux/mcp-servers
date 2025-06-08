@@ -220,6 +220,6 @@ jobs:
             --port 8080 \
             --timeout 3600 \
             --no-allow-unauthenticated \
-            --set-env-vars-file=env.txt
+            --env-vars-file=env.txt
 
 # ※必要に応じて新サーバー追加時は同様に追記
