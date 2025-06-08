@@ -196,13 +196,22 @@ jobs:
           DEPLOY_IMAGE="${{ steps.push-notion-image.outputs.artifact_image }}"
           SERVICE_NAME="mcp-notion"
 
-          NOTION_HEADERS='{"Authorization":"Bearer '"$NOTION_API_TOKEN"'","Notion-Version":"2022-06-28"}'
-          ESCAPED_HEADERS=$(echo "$NOTION_HEADERS" | sed -e 's/,/\\,/g' -e 's/=/\\=/g')
+          set -euo pipefail
 
-          cat > env.yaml <<'EOF'
+          # 0 なら未注入。GitHub が自動でマスクするので安全。
+          echo "token length = ${#NOTION_API_TOKEN}"
+
+          # ① <<EOF （クォート無し）のヒアドキュメントで YAML ファイルを生成
+          cat > env.yaml <<EOF
           OPENAPI_MCP_HEADERS: |
-            {"Authorization":"Bearer ${NOTION_API_TOKEN}","Notion-Version":"2022-06-28"}
+            {
+              "Authorization": "Bearer ${NOTION_API_TOKEN}",
+              "Notion-Version": "2022-06-28"
+            }
           EOF
+
+          echo "------ env.yaml ------"
+          cat env.yaml
 
           gcloud run deploy $SERVICE_NAME \
             --image $DEPLOY_IMAGE \
