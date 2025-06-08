@@ -27,8 +27,6 @@ jobs:
 
           if [[ ! -z "$missing_secrets" ]]; then
             echo "::error::Missing required global secrets:${missing_secrets}"
-            echo "::error::Please set up the required secrets in your GitHub repository settings."
-            echo "::error::See docs/github-secrets-setup.md for detailed instructions."
             exit 1
           else
             echo "All required global secrets are available"
@@ -41,7 +39,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1 # Only fetch the latest commit
+          fetch-depth: 1
 
       - id: "auth"
         name: "Google Cloud Authentication"
@@ -54,22 +52,39 @@ jobs:
 
       - name: "Enable necessary APIs"
         run: |
-          # Enable Container Registry API
-          gcloud services enable containerregistry.googleapis.com
-          # Enable Cloud Run API
+          gcloud services enable artifactregistry.googleapis.com
           gcloud services enable run.googleapis.com
 
-      - name: "Configure Docker authentication"
+      # Artifact Registryリポジトリの自動作成（存在すればスキップ）
+      - name: "Create Artifact Registry repositories if not exist"
+        env:
+          GCP_REGION: ${{ secrets.GCP_REGION }}
         run: |
-          gcloud auth configure-docker
+          PROJECT_ID=$(gcloud config get-value project)
+          LOCATION=$GCP_REGION
 
+          for REPO in github-mcp-server notion-mcp-server; do
+            if ! gcloud artifacts repositories describe $REPO --location=$LOCATION >/dev/null 2>&1; then
+              echo "Creating Artifact Registry repo: $REPO"
+              gcloud artifacts repositories create $REPO \
+                --repository-format=docker \
+                --location=$LOCATION \
+                --description="MCP Docker repo: $REPO"
+            else
+              echo "Artifact Registry repo $REPO already exists"
+            fi
+          done
+
+      - name: "Configure Artifact Registry Docker authentication"
+        env:
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+        run: |
+          gcloud auth configure-docker $GCP_REGION-docker.pkg.dev
+
+      # 以降は「github-mcp-server」/「notion-mcp-server」両方Artifact Registryにpush
       - name: Get GitHub MCP server version
         id: github-version
         run: |
-          if [[ ! -f mcps/github/version.txt ]]; then
-            echo "::error::GitHub MCP server version file not found: mcps/github/version.txt"
-            exit 1
-          fi
           VERSION=$(cat mcps/github/version.txt)
           if [[ -z "$VERSION" ]]; then
             echo "::error::GitHub MCP server version is empty: mcps/github/version.txt"
@@ -84,18 +99,12 @@ jobs:
         run: |
           if [[ -z "$GH_PERSONAL_ACCESS_TOKEN" ]]; then
             echo "::error::Missing required secret for GitHub MCP server: GH_PERSONAL_ACCESS_TOKEN"
-            echo "::error::Please set up this secret in your GitHub repository settings."
-            echo "::error::See docs/github-secrets-setup.md for detailed instructions."
             exit 1
           fi
 
       - name: Get Notion MCP server version
         id: notion-version
         run: |
-          if [[ ! -f mcps/notion/version.txt ]]; then
-            echo "::error::Notion MCP server version file not found: mcps/notion/version.txt"
-            exit 1
-          fi
           VERSION=$(cat mcps/notion/version.txt)
           if [[ -z "$VERSION" ]]; then
             echo "::error::Notion MCP server version is empty: mcps/notion/version.txt"
@@ -110,74 +119,39 @@ jobs:
         run: |
           if [[ -z "$NOTION_API_TOKEN" ]]; then
             echo "::error::Missing required secret for Notion MCP server: NOTION_API_TOKEN"
-            echo "::error::Please set up this secret in your GitHub repository settings."
-            echo "::error::See docs/github-secrets-setup.md for detailed instructions."
             exit 1
           fi
 
-      - name: Push GitHub MCP Server image to GCR
+      - name: Push GitHub MCP Server image to Artifact Registry
         id: push-github-image
         env:
           VERSION: ${{ steps.github-version.outputs.version }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
         run: |
-          echo "-------------------------------------"
           echo "Preparing GitHub MCP server image"
-          echo "Version: ${{ steps.github-version.outputs.version }}"
-
-          # Get image information
           IMAGE=$(cat mcps/github/docker-image.txt)
           SOURCE_IMAGE="${IMAGE}:${VERSION}"
-
-          # Set GCR image information
           PROJECT_ID=$(gcloud config get-value project)
-          GCR_IMAGE="gcr.io/${PROJECT_ID}/github-mcp-server:${VERSION}"
+          ARTIFACT_IMAGE="$GCP_REGION-docker.pkg.dev/$PROJECT_ID/github-mcp-server/github-mcp-server:$VERSION"
           echo "Source image: $SOURCE_IMAGE"
-          echo "Target GCR image: $GCR_IMAGE"
+          echo "Target Artifact Registry image: $ARTIFACT_IMAGE"
 
-          # Check if image already exists in GCR
-          if gcloud container images list-tags "gcr.io/${PROJECT_ID}/github-mcp-server" --filter="tags=${VERSION}" --format="get(tags)" 2>/dev/null | grep -q "${VERSION}"; then
-            echo "Image ${GCR_IMAGE} already exists in GCR. Skipping push."
-          else
-            echo "Image does not exist. Pulling and pushing to GCR..."
-            # Pull image and push to GCR
-            echo "Pulling image from source registry..."
-            docker pull $SOURCE_IMAGE
-            
-            echo "Tagging and pushing image to GCR..."
-            docker tag $SOURCE_IMAGE $GCR_IMAGE
-            docker push $GCR_IMAGE
-          fi
+          docker pull $SOURCE_IMAGE
+          docker tag $SOURCE_IMAGE $ARTIFACT_IMAGE
+          docker push $ARTIFACT_IMAGE
 
-          # Output image name for subsequent steps
-          echo "gcr_image=$GCR_IMAGE" >> $GITHUB_OUTPUT
-          echo "-------------------------------------"
+          echo "artifact_image=$ARTIFACT_IMAGE" >> $GITHUB_OUTPUT
 
       - name: Deploy GitHub MCP Server
         env:
           VERSION: ${{ steps.github-version.outputs.version }}
           GCP_REGION: ${{ secrets.GCP_REGION }}
-          GITHUB_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
         run: |
-          echo "-------------------------------------"
           echo "Deploying GitHub MCP server"
-          echo "Version: ${{ steps.github-version.outputs.version }}"
-
-          # Double-check required secrets before deployment
-          if [[ -z "$GITHUB_PERSONAL_ACCESS_TOKEN" ]]; then
-            echo "❌ Deployment failed: Missing required secret GH_PERSONAL_ACCESS_TOKEN"
-            exit 1
-          fi
-
-          # Set image to use for deployment
-          DEPLOY_IMAGE="${{ steps.push-github-image.outputs.gcr_image }}"
-          echo "Using image: $DEPLOY_IMAGE"
-
-          # Set service name
+          DEPLOY_IMAGE="${{ steps.push-github-image.outputs.artifact_image }}"
           SERVICE_NAME="mcp-github"
-          echo "Service name: $SERVICE_NAME"
 
-          # Cloud Runにデプロイ
-          echo "Deploying to Cloud Run..."
           gcloud run deploy $SERVICE_NAME \
             --image $DEPLOY_IMAGE \
             --platform managed \
@@ -191,52 +165,25 @@ jobs:
             --no-allow-unauthenticated \
             --set-env-vars="GITHUB_PERSONAL_ACCESS_TOKEN=$GH_PERSONAL_ACCESS_TOKEN"
 
-          if [ $? -eq 0 ]; then
-            echo "✅ Successfully deployed $SERVICE_NAME"
-            SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region $GCP_REGION --format="value(status.url)")
-            echo "Service URL: $SERVICE_URL"
-          else
-            echo "❌ Failed to deploy $SERVICE_NAME"
-            exit 1
-          fi
-          echo "-------------------------------------"
-
-      - name: Push Notion MCP Server image to GCR
+      - name: Push Notion MCP Server image to Artifact Registry
         id: push-notion-image
         env:
           VERSION: ${{ steps.notion-version.outputs.version }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
         run: |
-          echo "-------------------------------------"
           echo "Preparing Notion MCP server image"
-          echo "Version: ${{ steps.notion-version.outputs.version }}"
-
-          # イメージ情報を取得
           IMAGE=$(cat mcps/notion/docker-image.txt)
           SOURCE_IMAGE="${IMAGE}:${VERSION}"
-
-          # GCRイメージ情報を設定
           PROJECT_ID=$(gcloud config get-value project)
-          GCR_IMAGE="gcr.io/${PROJECT_ID}/notion-mcp-server:${VERSION}"
+          ARTIFACT_IMAGE="$GCP_REGION-docker.pkg.dev/$PROJECT_ID/notion-mcp-server/notion-mcp-server:$VERSION"
           echo "Source image: $SOURCE_IMAGE"
-          echo "Target GCR image: $GCR_IMAGE"
+          echo "Target Artifact Registry image: $ARTIFACT_IMAGE"
 
-          # GCRにイメージが既に存在するか確認
-          if gcloud container images list-tags "gcr.io/${PROJECT_ID}/notion-mcp-server" --filter="tags=${VERSION}" --format="get(tags)" 2>/dev/null | grep -q "${VERSION}"; then
-            echo "イメージ ${GCR_IMAGE} は既にGCRに存在します。プッシュをスキップします。"
-          else
-            echo "イメージが存在しないため、プル・プッシュを行います。"
-            # イメージをプルしてGCRにプッシュ
-            echo "Pulling image from source registry..."
-            docker pull $SOURCE_IMAGE
-            
-            echo "Tagging and pushing image to GCR..."
-            docker tag $SOURCE_IMAGE $GCR_IMAGE
-            docker push $GCR_IMAGE
-          fi
+          docker pull $SOURCE_IMAGE
+          docker tag $SOURCE_IMAGE $ARTIFACT_IMAGE
+          docker push $ARTIFACT_IMAGE
 
-          # 後続のステップで使用するため、イメージ名を出力
-          echo "gcr_image=$GCR_IMAGE" >> $GITHUB_OUTPUT
-          echo "-------------------------------------"
+          echo "artifact_image=$ARTIFACT_IMAGE" >> $GITHUB_OUTPUT
 
       - name: Deploy Notion MCP Server
         env:
@@ -244,27 +191,10 @@ jobs:
           GCP_REGION: ${{ secrets.GCP_REGION }}
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
         run: |
-          echo "-------------------------------------"
           echo "Deploying Notion MCP server"
-          echo "Version: ${{ steps.notion-version.outputs.version }}"
-
-          # Double-check required secrets before deployment
-          if [[ -z "$NOTION_API_TOKEN" ]]; then
-            echo "❌ Deployment failed: Missing required secret NOTION_API_TOKEN"
-            exit 1
-          fi
-
-          # デプロイに使用するイメージを設定
-          DEPLOY_IMAGE="${{ steps.push-notion-image.outputs.gcr_image }}"
-          echo "Using image: $DEPLOY_IMAGE"
-
-          # サービス名設定
+          DEPLOY_IMAGE="${{ steps.push-notion-image.outputs.artifact_image }}"
           SERVICE_NAME="mcp-notion"
-          echo "Service name: $SERVICE_NAME"
 
-          # Cloud Runにデプロイ
-          echo "Deploying to Cloud Run..."
-          # NotionヘッダーJSONフォーマット
           NOTION_HEADERS="{\"Authorization\":\"Bearer $NOTION_API_TOKEN\",\"Notion-Version\":\"2022-06-28\"}"
 
           gcloud run deploy $SERVICE_NAME \
@@ -280,15 +210,4 @@ jobs:
             --no-allow-unauthenticated \
             --set-env-vars="OPENAPI_MCP_HEADERS=$NOTION_HEADERS"
 
-          if [ $? -eq 0 ]; then
-            echo "✅ Successfully deployed $SERVICE_NAME"
-            SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region $GCP_REGION --format="value(status.url)")
-            echo "Service URL: $SERVICE_URL"
-          else
-            echo "❌ Failed to deploy $SERVICE_NAME"
-            exit 1
-          fi
-          echo "-------------------------------------"
-
-      # 注：新しいMCPサーバーを追加する場合は、上記と同様の形式でステップを追加してください
-      # 各MCPサーバーは必要な環境変数やシークレットが異なるため、個別に設定が必要です
+# ※必要に応じて新サーバー追加時は同様に追記
