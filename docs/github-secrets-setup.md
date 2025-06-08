@@ -25,13 +25,14 @@
    - 例: `us-central1`, `asia-northeast1`
    - [利用可能なリージョン一覧](https://cloud.google.com/run/docs/locations)
 
-3. **`GCP_SA_KEY`**  
+3. **`GCP_CREDENTIALS`**  
    Google Cloud Platform のサービスアカウントキー（JSON 形式）
 
    - サービスアカウントの作成手順:
      1. Google Cloud Console > IAM > サービスアカウント > 「サービスアカウントを作成」
      2. 必要な権限: `Cloud Run Admin`, `Storage Admin`, `Service Account User`
      3. キーを作成（JSON 形式）し、その内容を丸ごとコピー
+     4. GitHub Secrets にコピーした内容を設定（改行を含む）
 
 ### MCP サーバー固有の設定
 
@@ -63,7 +64,7 @@
 
 デプロイワークフローには、必要なシークレットの存在を確認する機能が組み込まれています。シークレットが不足している場合、以下のように動作します:
 
-1. グローバルな必須シークレット（`GCP_PROJECT_ID`, `GCP_SA_KEY`, `GCP_REGION`）が不足している場合:
+1. グローバルな必須シークレット（`GCP_PROJECT_ID`, `GCP_CREDENTIALS`, `GCP_REGION`）が不足している場合:
 
    - デプロイワークフロー全体が開始前に停止します
    - エラーメッセージに不足しているシークレットが表示されます

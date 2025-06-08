@@ -14,7 +14,7 @@ MCP サーバーは、このプロトコルに準拠したツールやリソー�
 
 - `GCP_PROJECT_ID` - Google Cloud プロジェクト ID
 - `GCP_REGION` - デプロイ先リージョン（例: `us-central1`）
-- `GCP_SA_KEY` - サービスアカウントの JSON キー（全体をコピー）
+- `GCP_CREDENTIALS` - サービスアカウントの JSON キー（全体をコピー）
 
 ### 個別の MCP サーバーに必要なシークレット
 
@@ -74,7 +74,7 @@ Google Cloud Run へのデプロイには、以下の GitHub Secrets の設定�
 
 - `GCP_PROJECT_ID` - Google Cloud プロジェクト ID
 - `GCP_REGION` - デプロイ先リージョン（例: `us-central1`）
-- `GCP_SA_KEY` - サービスアカウントの JSON キー（base64 エンコードなし）
+- `GCP_CREDENTIALS` - サービスアカウントの JSON キー（base64 エンコードなし）
 
 ### サービスアカウント設定手順
 
@@ -103,7 +103,7 @@ Google Cloud Run へのデプロイには、以下の GitHub Secrets の設定�
 1. リポジトリの Settings > Secrets > Actions で以下の Secrets を設定します：
    - `GCP_PROJECT_ID` - Google Cloud プロジェクト ID
    - `GCP_REGION` - デプロイ先リージョン（例: `us-central1`）
-   - `GCP_SA_KEY` - サービスアカウントの JSON キー（全体をコピー）
+   - `GCP_CREDENTIALS` - サービスアカウントの JSON キー（全体をコピー）
    - `GITHUB_PERSONAL_ACCESS_TOKEN` - GitHub MCP サーバー用のトークン
    - `NOTION_API_TOKEN` - Notion MCP サーバー用の API トークン（OPENAPI_MCP_HEADERS で使用）
 
