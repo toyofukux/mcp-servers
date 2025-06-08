@@ -52,6 +52,17 @@ jobs:
       - name: "Set up Google Cloud SDK"
         uses: "google-github-actions/setup-gcloud@v2"
 
+      - name: "必要なAPIを有効化"
+        run: |
+          # Container Registry APIを有効化
+          gcloud services enable containerregistry.googleapis.com
+          # Cloud Run APIを有効化
+          gcloud services enable run.googleapis.com
+
+      - name: "Dockerの認証設定"
+        run: |
+          gcloud auth configure-docker
+
       - name: Get GitHub MCP server version
         id: github-version
         run: |
@@ -102,8 +113,21 @@ jobs:
 
           # イメージ情報を取得
           IMAGE=$(cat mcps/github/docker-image.txt)
-          DEPLOY_IMAGE="${IMAGE}:${VERSION}"
-          echo "Using public image: $DEPLOY_IMAGE"
+          SOURCE_IMAGE="${IMAGE}:${VERSION}"
+
+          # GCRにイメージをコピー
+          PROJECT_ID=$(gcloud config get-value project)
+          GCR_IMAGE="gcr.io/${PROJECT_ID}/github-mcp-server:${VERSION}"
+          echo "Copying image from $SOURCE_IMAGE to $GCR_IMAGE"
+
+          # イメージをプルしてGCRにプッシュ
+          docker pull $SOURCE_IMAGE
+          docker tag $SOURCE_IMAGE $GCR_IMAGE
+          docker push $GCR_IMAGE
+
+          # デプロイに使用するイメージを設定
+          DEPLOY_IMAGE=$GCR_IMAGE
+          echo "Using GCR image: $DEPLOY_IMAGE"
 
           # サービス名設定
           SERVICE_NAME="mcp-github"
@@ -152,8 +176,21 @@ jobs:
 
           # イメージ情報を取得
           IMAGE=$(cat mcps/notion/docker-image.txt)
-          DEPLOY_IMAGE="${IMAGE}:${VERSION}"
-          echo "Using public image: $DEPLOY_IMAGE"
+          SOURCE_IMAGE="${IMAGE}:${VERSION}"
+
+          # GCRにイメージをコピー
+          PROJECT_ID=$(gcloud config get-value project)
+          GCR_IMAGE="gcr.io/${PROJECT_ID}/notion-mcp-server:${VERSION}"
+          echo "Copying image from $SOURCE_IMAGE to $GCR_IMAGE"
+
+          # イメージをプルしてGCRにプッシュ
+          docker pull $SOURCE_IMAGE
+          docker tag $SOURCE_IMAGE $GCR_IMAGE
+          docker push $GCR_IMAGE
+
+          # デプロイに使用するイメージを設定
+          DEPLOY_IMAGE=$GCR_IMAGE
+          echo "Using GCR image: $DEPLOY_IMAGE"
 
           # サービス名設定
           SERVICE_NAME="mcp-notion"
