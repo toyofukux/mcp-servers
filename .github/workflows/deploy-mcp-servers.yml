@@ -115,6 +115,43 @@ jobs:
             exit 1
           fi
 
+      - name: Push GitHub MCP Server image to GCR
+        id: push-github-image
+        env:
+          VERSION: ${{ steps.github-version.outputs.version }}
+        run: |
+          echo "-------------------------------------"
+          echo "Preparing GitHub MCP server image"
+          echo "Version: ${{ steps.github-version.outputs.version }}"
+
+          # イメージ情報を取得
+          IMAGE=$(cat mcps/github/docker-image.txt)
+          SOURCE_IMAGE="${IMAGE}:${VERSION}"
+
+          # GCRイメージ情報を設定
+          PROJECT_ID=$(gcloud config get-value project)
+          GCR_IMAGE="gcr.io/${PROJECT_ID}/github-mcp-server:${VERSION}"
+          echo "Source image: $SOURCE_IMAGE"
+          echo "Target GCR image: $GCR_IMAGE"
+
+          # GCRにイメージが既に存在するか確認
+          if gcloud container images list-tags "gcr.io/${PROJECT_ID}/github-mcp-server" --filter="tags=${VERSION}" --format="get(tags)" 2>/dev/null | grep -q "${VERSION}"; then
+            echo "イメージ ${GCR_IMAGE} は既にGCRに存在します。プッシュをスキップします。"
+          else
+            echo "イメージが存在しないため、プル・プッシュを行います。"
+            # イメージをプルしてGCRにプッシュ
+            echo "Pulling image from source registry..."
+            docker pull $SOURCE_IMAGE
+            
+            echo "Tagging and pushing image to GCR..."
+            docker tag $SOURCE_IMAGE $GCR_IMAGE
+            docker push $GCR_IMAGE
+          fi
+
+          # 後続のステップで使用するため、イメージ名を出力
+          echo "gcr_image=$GCR_IMAGE" >> $GITHUB_OUTPUT
+          echo "-------------------------------------"
+
       - name: Deploy GitHub MCP Server
         env:
           VERSION: ${{ steps.github-version.outputs.version }}
@@ -126,33 +163,14 @@ jobs:
           echo "Version: ${{ steps.github-version.outputs.version }}"
 
           # Double-check required secrets before deployment
-          if [[ -z "$VERSION" ]]; then
+          if [[ -z "$GITHUB_PERSONAL_ACCESS_TOKEN" ]]; then
             echo "❌ Deployment failed: Missing required secret GH_PERSONAL_ACCESS_TOKEN"
             exit 1
           fi
 
-          # イメージ情報を取得
-          IMAGE=$(cat mcps/github/docker-image.txt)
-          SOURCE_IMAGE="${IMAGE}:${VERSION}"
-
-          # GCRイメージ情報を設定
-          PROJECT_ID=$(gcloud config get-value project)
-          GCR_IMAGE="gcr.io/${PROJECT_ID}/github-mcp-server:${VERSION}"
-
-          # GCRにイメージが存在するか確認
-          if gcloud container images list-tags gcr.io/${PROJECT_ID}/github-mcp-server --filter="tags=${VERSION}" --format="get(tags)" | grep -q "${VERSION}"; then
-            echo "イメージ ${GCR_IMAGE} は既にGCRに存在します。プッシュをスキップします。"
-          else
-            echo "Copying image from $SOURCE_IMAGE to $GCR_IMAGE"
-            # イメージをプルしてGCRにプッシュ
-            docker pull $SOURCE_IMAGE
-            docker tag $SOURCE_IMAGE $GCR_IMAGE
-            docker push $GCR_IMAGE
-          fi
-
           # デプロイに使用するイメージを設定
-          DEPLOY_IMAGE=$GCR_IMAGE
-          echo "Using GCR image: $DEPLOY_IMAGE"
+          DEPLOY_IMAGE="${{ steps.push-github-image.outputs.gcr_image }}"
+          echo "Using image: $DEPLOY_IMAGE"
 
           # サービス名設定
           SERVICE_NAME="mcp-github"
@@ -183,6 +201,43 @@ jobs:
           fi
           echo "-------------------------------------"
 
+      - name: Push Notion MCP Server image to GCR
+        id: push-notion-image
+        env:
+          VERSION: ${{ steps.notion-version.outputs.version }}
+        run: |
+          echo "-------------------------------------"
+          echo "Preparing Notion MCP server image"
+          echo "Version: ${{ steps.notion-version.outputs.version }}"
+
+          # イメージ情報を取得
+          IMAGE=$(cat mcps/notion/docker-image.txt)
+          SOURCE_IMAGE="${IMAGE}:${VERSION}"
+
+          # GCRイメージ情報を設定
+          PROJECT_ID=$(gcloud config get-value project)
+          GCR_IMAGE="gcr.io/${PROJECT_ID}/notion-mcp-server:${VERSION}"
+          echo "Source image: $SOURCE_IMAGE"
+          echo "Target GCR image: $GCR_IMAGE"
+
+          # GCRにイメージが既に存在するか確認
+          if gcloud container images list-tags "gcr.io/${PROJECT_ID}/notion-mcp-server" --filter="tags=${VERSION}" --format="get(tags)" 2>/dev/null | grep -q "${VERSION}"; then
+            echo "イメージ ${GCR_IMAGE} は既にGCRに存在します。プッシュをスキップします。"
+          else
+            echo "イメージが存在しないため、プル・プッシュを行います。"
+            # イメージをプルしてGCRにプッシュ
+            echo "Pulling image from source registry..."
+            docker pull $SOURCE_IMAGE
+            
+            echo "Tagging and pushing image to GCR..."
+            docker tag $SOURCE_IMAGE $GCR_IMAGE
+            docker push $GCR_IMAGE
+          fi
+
+          # 後続のステップで使用するため、イメージ名を出力
+          echo "gcr_image=$GCR_IMAGE" >> $GITHUB_OUTPUT
+          echo "-------------------------------------"
+
       - name: Deploy Notion MCP Server
         env:
           VERSION: ${{ steps.notion-version.outputs.version }}
@@ -199,28 +254,9 @@ jobs:
             exit 1
           fi
 
-          # イメージ情報を取得
-          IMAGE=$(cat mcps/notion/docker-image.txt)
-          SOURCE_IMAGE="${IMAGE}:${VERSION}"
-
-          # GCRイメージ情報を設定
-          PROJECT_ID=$(gcloud config get-value project)
-          GCR_IMAGE="gcr.io/${PROJECT_ID}/notion-mcp-server:${VERSION}"
-
-          # GCRにイメージが存在するか確認
-          if gcloud container images list-tags gcr.io/${PROJECT_ID}/notion-mcp-server --filter="tags=${VERSION}" --format="get(tags)" | grep -q "${VERSION}"; then
-            echo "イメージ ${GCR_IMAGE} は既にGCRに存在します。プッシュをスキップします。"
-          else
-            echo "Copying image from $SOURCE_IMAGE to $GCR_IMAGE"
-            # イメージをプルしてGCRにプッシュ
-            docker pull $SOURCE_IMAGE
-            docker tag $SOURCE_IMAGE $GCR_IMAGE
-            docker push $GCR_IMAGE
-          fi
-
           # デプロイに使用するイメージを設定
-          DEPLOY_IMAGE=$GCR_IMAGE
-          echo "Using GCR image: $DEPLOY_IMAGE"
+          DEPLOY_IMAGE="${{ steps.push-notion-image.outputs.gcr_image }}"
+          echo "Using image: $DEPLOY_IMAGE"
 
           # サービス名設定
           SERVICE_NAME="mcp-notion"
