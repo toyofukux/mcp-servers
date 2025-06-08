@@ -164,7 +164,7 @@ jobs:
             --timeout 3600 \
             --no-allow-unauthenticated \
             --set-env-vars="GITHUB_PERSONAL_ACCESS_TOKEN=$GH_PERSONAL_ACCESS_TOKEN" \
-            --command "serve"
+            --command "server"
 
       - name: Push Notion MCP Server image to Artifact Registry
         id: push-notion-image
