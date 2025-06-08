@@ -1,0 +1,209 @@
+name: Deploy MCP Servers to Google Cloud Run
+
+on:
+  push:
+    paths:
+      - "mcps/*/version.txt"
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2 # 変更を検出するために必要
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Detect changed MCP servers
+        id: detect-changes
+        run: |
+          echo "Checking for changes in version.txt files..."
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD | grep "mcps/.*/version.txt" || echo "")
+          if [ -n "$CHANGED_FILES" ]; then
+            echo "Found changed files: $CHANGED_FILES"
+            CHANGED_DIRS=$(echo "$CHANGED_FILES" | sed -r 's|mcps/([^/]+)/version.txt|\1|')
+            echo "Changed directories: $CHANGED_DIRS"
+            echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
+          else
+            echo "No version.txt files were changed in this commit."
+          fi
+
+      - name: Deploy GitHub MCP Server
+        if: contains(steps.detect-changes.outputs.dirs, 'github')
+        run: |
+          VERSION=$(cat mcps/github/version.txt)
+          echo "-------------------------------------"
+          echo "Deploying GitHub MCP server"
+          echo "Version: $VERSION"
+
+          IMAGE=$(cat mcps/github/docker-image.txt)
+          DEPLOY_IMAGE="${IMAGE}:${VERSION}"
+          echo "Using public image: $DEPLOY_IMAGE"
+
+          SERVICE_NAME="mcp-github"
+          echo "Service name: $SERVICE_NAME"
+
+          echo "Deploying to Cloud Run..."
+          gcloud run deploy $SERVICE_NAME \
+            --image $DEPLOY_IMAGE \
+            --platform managed \
+            --region ${{ secrets.GCP_REGION }} \
+            --memory 512Mi \
+            --min-instances 0 \
+            --max-instances 1 \
+            --cpu 1 \
+            --port 8080 \
+            --timeout 3600 \
+            --allow-unauthenticated=false \
+            --set-env-vars="GITHUB_PERSONAL_ACCESS_TOKEN=${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}"
+
+          if [ $? -eq 0 ]; then
+            echo "✅ Successfully deployed $SERVICE_NAME"
+            SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region ${{ secrets.GCP_REGION }} --format="value(status.url)")
+            echo "Service URL: $SERVICE_URL"
+          else
+            echo "❌ Failed to deploy $SERVICE_NAME"
+            exit 1
+          fi
+          echo "-------------------------------------"
+
+      - name: Deploy Notion MCP Server
+        if: contains(steps.detect-changes.outputs.dirs, 'notion')
+        run: |
+          VERSION=$(cat mcps/notion/version.txt)
+          echo "-------------------------------------"
+          echo "Deploying Notion MCP server"
+          echo "Version: $VERSION"
+
+          IMAGE=$(cat mcps/notion/docker-image.txt)
+          DEPLOY_IMAGE="${IMAGE}:${VERSION}"
+          echo "Using public image: $DEPLOY_IMAGE"
+
+          SERVICE_NAME="mcp-notion"
+          echo "Service name: $SERVICE_NAME"
+
+          echo "Deploying to Cloud Run..."
+          # Create JSON format header with Notion token and version
+          NOTION_HEADERS="{\"Authorization\":\"Bearer ${{ secrets.NOTION_API_TOKEN }}\",\"Notion-Version\":\"2022-06-28\"}"
+
+          gcloud run deploy $SERVICE_NAME \
+            --image $DEPLOY_IMAGE \
+            --platform managed \
+            --region ${{ secrets.GCP_REGION }} \
+            --memory 512Mi \
+            --min-instances 0 \
+            --max-instances 1 \
+            --cpu 1 \
+            --port 8080 \
+            --timeout 3600 \
+            --allow-unauthenticated=false \
+            --set-env-vars="OPENAPI_MCP_HEADERS=$NOTION_HEADERS"
+
+          if [ $? -eq 0 ]; then
+            echo "✅ Successfully deployed $SERVICE_NAME"
+            SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region ${{ secrets.GCP_REGION }} --format="value(status.url)")
+            echo "Service URL: $SERVICE_URL"
+          else
+            echo "❌ Failed to deploy $SERVICE_NAME"
+            exit 1
+          fi
+          echo "-------------------------------------"
+          echo "Deploying Notion MCP server"
+          echo "Version: $VERSION"
+
+          IMAGE=$(cat mcps/notion/docker-image.txt)
+          DEPLOY_IMAGE="${IMAGE}:${VERSION}"
+          echo "Using public image: $DEPLOY_IMAGE"
+
+          SERVICE_NAME="mcp-notion"
+          echo "Service name: $SERVICE_NAME"
+
+          echo "Deploying to Cloud Run..."
+          # Create JSON format header with Notion token and version
+          NOTION_HEADERS="{\"Authorization\":\"Bearer \${{ secrets.NOTION_API_TOKEN }}\",\"Notion-Version\":\"2022-06-28\"}"
+
+          gcloud run deploy $SERVICE_NAME \
+            --image $DEPLOY_IMAGE \
+            --platform managed \
+            --region ${{ secrets.GCP_REGION }} \
+            --memory 512Mi \
+            --min-instances 0 \
+            --max-instances 1 \
+            --cpu 1 \
+            --port 8080 \
+            --timeout 3600 \
+            --allow-unauthenticated=false \
+            --set-env-vars="OPENAPI_MCP_HEADERS=$NOTION_HEADERS"
+
+          if [ $? -eq 0 ]; then
+            echo "✅ Successfully deployed $SERVICE_NAME"
+            SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region ${{ secrets.GCP_REGION }} --format="value(status.url)")
+            echo "Service URL: $SERVICE_URL"
+          else
+            echo "❌ Failed to deploy $SERVICE_NAME"
+            exit 1
+          fi
+          echo "-------------------------------------"
+
+      - name: Deploy other MCP Servers
+        if: steps.detect-changes.outputs.dirs != '' && !contains(steps.detect-changes.outputs.dirs, 'github') && !contains(steps.detect-changes.outputs.dirs, 'notion')
+        run: |
+          for DIR in ${{ steps.detect-changes.outputs.dirs }}; do
+            # Skip github and notion servers as they are handled separately
+            if [ "$DIR" = "github" ] || [ "$DIR" = "notion" ]; then
+              continue
+            fi
+            
+            VERSION=$(cat mcps/$DIR/version.txt)
+            echo "-------------------------------------"
+            echo "Deploying MCP server: $DIR"
+            echo "Version: $VERSION"
+            
+            # 公開レジストリのイメージを使用する
+            if [ -f "mcps/$DIR/docker-image.txt" ]; then
+              IMAGE=$(cat mcps/$DIR/docker-image.txt)
+              DEPLOY_IMAGE="${IMAGE}:${VERSION}"
+              echo "Using public image: $DEPLOY_IMAGE"
+            else
+              echo "Error: $DIR does not have docker-image.txt file"
+              echo "Make sure to create a docker-image.txt file with the public registry image path"
+              exit 1
+            fi
+            
+            # サービス名を設定（"mcp-" プレフィックスを追加）
+            SERVICE_NAME="mcp-${DIR}"
+            echo "Service name: $SERVICE_NAME"
+            
+            # Cloud Run にデプロイ (認証付き)
+            echo "Deploying to Cloud Run..."
+            gcloud run deploy $SERVICE_NAME \
+              --image $DEPLOY_IMAGE \
+              --platform managed \
+              --region ${{ secrets.GCP_REGION }} \
+              --memory 512Mi \
+              --min-instances 0 \
+              --max-instances 1 \
+              --cpu 1 \
+              --port 8080 \
+              --timeout 3600 \
+              --allow-unauthenticated=false
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ Successfully deployed $SERVICE_NAME"
+              # デプロイされたサービスのURLを取得
+              SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region ${{ secrets.GCP_REGION }} --format="value(status.url)")
+              echo "Service URL: $SERVICE_NAME"
+            else
+              echo "❌ Failed to deploy $SERVICE_NAME"
+              exit 1
+            fi
+            echo "-------------------------------------"
+          done

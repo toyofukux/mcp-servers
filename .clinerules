@@ -1,0 +1,16 @@
+# Project Guidelines
+
+※やり取り、コメントは日本語で行うこと
+
+# このプロジェクトについて
+- 複数のMCPサーバーを管理するリポジトリ
+- デプロイ先はFly.io
+- ほとんどの場合MCPサーバーはDocker composeを準備しているので、Dockerコンテナのホスティングを第1選択肢とする
+- デプロイはGithub Actionsでmainブランチへのpushをトリガーとする
+- 各MCPサーバーはGit Submoduleで /mcps/<server_name>/配下に配置
+- 各MCPサーバーについてのドキュメントは /docs 配下に配置
+
+## ドキュメントについて
+- 機能追加や変更を行ったら /docs フォルダの該当ドキュメントを更新し、報告すること
+- README.mdは新機能と同期させる
+- CHANGELOG.mdを常に更新する
