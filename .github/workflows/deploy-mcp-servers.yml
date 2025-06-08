@@ -142,29 +142,29 @@ jobs:
 
           echo "artifact_image=$ARTIFACT_IMAGE" >> $GITHUB_OUTPUT
 
-      - name: Deploy GitHub MCP Server
-        env:
-          VERSION: ${{ steps.github-version.outputs.version }}
-          GCP_REGION: ${{ secrets.GCP_REGION }}
-          GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
-        run: |
-          echo "Deploying GitHub MCP server"
-          DEPLOY_IMAGE="${{ steps.push-github-image.outputs.artifact_image }}"
-          SERVICE_NAME="mcp-github"
+      #   - name: Deploy GitHub MCP Server
+      #     env:
+      #       VERSION: ${{ steps.github-version.outputs.version }}
+      #       GCP_REGION: ${{ secrets.GCP_REGION }}
+      #       GH_PERSONAL_ACCESS_TOKEN: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+      #     run: |
+      #       echo "Deploying GitHub MCP server"
+      #       DEPLOY_IMAGE="${{ steps.push-github-image.outputs.artifact_image }}"
+      #       SERVICE_NAME="mcp-github"
 
-          gcloud run deploy $SERVICE_NAME \
-            --image $DEPLOY_IMAGE \
-            --platform managed \
-            --region $GCP_REGION \
-            --memory 512Mi \
-            --min-instances 0 \
-            --max-instances 1 \
-            --cpu 1 \
-            --port 8080 \
-            --timeout 3600 \
-            --no-allow-unauthenticated \
-            --set-env-vars="GITHUB_PERSONAL_ACCESS_TOKEN=$GH_PERSONAL_ACCESS_TOKEN" \
-            --command "github-mcp-server server"
+      #       gcloud run deploy $SERVICE_NAME \
+      #         --image $DEPLOY_IMAGE \
+      #         --platform managed \
+      #         --region $GCP_REGION \
+      #         --memory 512Mi \
+      #         --min-instances 0 \
+      #         --max-instances 1 \
+      #         --cpu 1 \
+      #         --port 8080 \
+      #         --timeout 3600 \
+      #         --no-allow-unauthenticated \
+      #         --set-env-vars="GITHUB_PERSONAL_ACCESS_TOKEN=$GH_PERSONAL_ACCESS_TOKEN" \
+      #         --command "github-mcp-server server"
 
       - name: Push Notion MCP Server image to Artifact Registry
         id: push-notion-image
