@@ -199,15 +199,10 @@ jobs:
           NOTION_HEADERS='{"Authorization":"Bearer '"$NOTION_API_TOKEN"'","Notion-Version":"2022-06-28"}'
           ESCAPED_HEADERS=$(echo "$NOTION_HEADERS" | sed -e 's/,/\\,/g' -e 's/=/\\=/g')
 
-          echo "---- raw JSON ----"
-          printf '%s\n' "$NOTION_HEADERS"
-
-          echo "---- after sed ----"
-          printf '%s\n' "$ESCAPED_HEADERS"
-
-          printf 'OPENAPI_MCP_HEADERS=%s\n' "$NOTION_HEADERS" > env.txt
-          echo "---- env.txt ----"
-          cat env.txt
+          cat > env.yaml <<'EOF'
+          OPENAPI_MCP_HEADERS: |
+            {"Authorization":"Bearer ${NOTION_API_TOKEN}","Notion-Version":"2022-06-28"}
+          EOF
 
           gcloud run deploy $SERVICE_NAME \
             --image $DEPLOY_IMAGE \
@@ -220,6 +215,6 @@ jobs:
             --port 8080 \
             --timeout 3600 \
             --no-allow-unauthenticated \
-            --env-vars-file=env.txt
+            --env-vars-file=env.yaml
 
 # ※必要に応じて新サーバー追加時は同様に追記
