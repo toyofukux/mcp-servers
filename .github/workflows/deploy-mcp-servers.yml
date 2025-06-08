@@ -41,7 +41,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2 # 変更を検出するために必要
+          fetch-depth: 1 # 最新のコミットのみ取得
 
       - id: "auth"
         name: "Google Cloud認証"
@@ -121,7 +121,7 @@ jobs:
             --cpu 1 \
             --port 8080 \
             --timeout 3600 \
-            --allow-unauthenticated=false \
+            --no-allow-unauthenticated \
             --set-env-vars="GITHUB_PERSONAL_ACCESS_TOKEN=$GH_PERSONAL_ACCESS_TOKEN"
 
           if [ $? -eq 0 ]; then
@@ -174,7 +174,7 @@ jobs:
             --cpu 1 \
             --port 8080 \
             --timeout 3600 \
-            --allow-unauthenticated=false \
+            --no-allow-unauthenticated \
             --set-env-vars="OPENAPI_MCP_HEADERS=$NOTION_HEADERS"
 
           if [ $? -eq 0 ]; then
